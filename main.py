@@ -1,101 +1,110 @@
 
-from imdb import IMDb
-from imdb.Person import Person
-from imdb.Movie import Movie
-import pymysql
-import os
-import openpyxl as xl
+"""
+WHAT IS ITHIS?
+
+It's a python script which extracts data from a .tsv file (tab seperated values) given
+by IMdB with general information about all their movies, and stores it into a local 
+SQLite database. It currently cannot do queries, that's in the future.
+
+WHERE TO GET THE DATA:
+
+Follow the link under "Data Location" at this website:
+
+https://www.imdb.com/interfaces/
+
+then download the "title.basics.tsv.gz" file. This file is currently zipped up not as
+a .zip file, but as a ,gz file, but can be unzipped similarly. 7zip or winrar should be
+able to handle it. This datatable can be opened in notepad or excel, though it's probably
+better handled in excel. Be warned, this thing is HUGE, and more programs aren't designed
+to handle files this large.
+
+HOW TO USE:
+
+Put that title.basics.tsv file into the data/ folder, and run this script with the command:
+
+python main.py
 
 """
-Rows:
-Year		MovieID	Title		Rememberance		Rating
 
-"""
+import csv
+import sqlite3
+from sqlite3 import Error
 
-# Excel spreadsheet name
-EXCEL_SPREADSHEET_NAME = 'movies.xlsx'
-USER_SPREADSHEET_NAME = 'user_movies.xlsx'
+#DB commands
+DB_INSERT = 'INSERT INTO {} ({}) VALUES {}'
 
-# Movie Statuses
-NOT_SEEN = 0
-SEEN = 1
-WANT_TO_SEE = 2
+#For future use
+MOVIE_GENERAL_FIELDS = "movie_id, title, year, runtime, cover_url"
+PERSON_GENERAL_FIELDS = "person_id, name, headshot_url"
+USER_MOVIES_FIELDS = "movie_id, retention, rating"
 
-
-def search_movie(name, year):
-	results = ia.search_movie(str(name))
-	for movie in results:
-		if str(movie['year']) == str(year):
-			return movie
-	return None
-	
-def store_user_input():
-	wb_user = xl.load_workbook(USER_SPREADSHEET_NAME)
-	ws_user = wb_user.active
-	row = 2
-	
+def create_connection(db_file):
+	"""Create a database connection to a database that resides in memory
+	If database does not exist, create a new one"""
 	try:
-		while True:
-			year = ws_user.cell(row=row, column=1).value
-			title = ws_user.cell(row=row, column=2).value
-			
-			retention = ws_user.cell(row=row, column=3).value
-			retention = 'NULL' if retention is None else retention
-			rating = ws_user.cell(row=row, column=4).value
-			rating = 'NULL' if rating is None else rating
-			
-			row += 1
-			
-			if not year:
-				break
-			movie = search_movie(title, year)
-			if not movie:
-				print('Could not find movie "{}"'.format(title))
-				continue
-			result = db_cursor.execute('SELECT * FROM user_movies WHERE movie_id={}'.format(movie.movieID))
-			if result > 0:
-				print('Already found entry for "{}"'.format(title))
-				continue
-			values = '({}, {}, {})'.format(movie.movieID, retention, rating)
-			db_cursor.execute(DB_INSERT.format('user_movies',USER_MOVIES_FIELDS,values))
-			print('Stored {}'.format(title))
-		
-		db.commit()
-	except:
-		db.rollback()
-		
-def add_person(person):
-	id = person.personID
-	result = db_cursor.execute('SELECT * FROM person_general WHERE person_id={}'.format(id))
-	if result > 0:
-		print('Already found entry for {}'.format(person['name']))
-		return
-	values = '({}, {}, {})'.format(id, person['name'], 'NULL')
-	db_cursor.execute(DB_INSERT.format('person_general', PERSON_GENERAL_FIELDS, values)
+		conn = sqlite3.connect(db_file)
+		return conn
+	except Error as e:
+		print(e)
+	return None
 
-def setup_excel_sheets():
-	global wb
-	global ws_input, ws_movies, ws_people
+def create_title_basics_table(conn):
+	try:
+		c = conn.cursor()
+		c.execute('''CREATE TABLE IF NOT EXISTS title_basics (
+			tconst integer PRIMARY KEY,
+			titleType text NOT NULL,
+			primaryTitle text NOT NULL,
+			originalTitle text NOT NULL,
+			isAdult integer NOT NULL,
+			startYear integer,
+			endYear integer,
+			runtimeMinutes integer,
+			genres text
+		)''')
+	except Error as e:
+		print(e)
 
-	if not os.path.isfile(EXCEL_SPREADSHEET_NAME):
-		wb = xl.Workbook()
-		ws_input = wb.active
-		ws_input.title = 'User Input'
-		ws_movies = wb.create_sheet('Movie Data')
-		ws_people = wb.create_sheet('Person Data')
-	else:
-		wb = xl.load_workbook(EXCEL_SPREADSHEET_NAME)
-		ws_input = wb['User Input']
-		ws_movies = wb['Movie Data']
-		ws_people = wb['Person Data']
+def add_title_basic(conn, title_basic):
+	sql = '''INSERT INTO title_basics(tconst, titleType, primaryTitle, originalTitle, isAdult, startYear, endYear, runtimeMinutes, genres)
+				VALUES(?,?,?,?,?,?,?,?,?) '''
+	cur = conn.cursor()
+	cur.execute(sql, title_basic)
+	return cur.lastrowid
 
-	ws_input['A1'] = 'MovieID'
-	ws_input['B1'] = 'Year'
-	ws_input['C1'] = 'Movie Title'
+def main():
+	database = 'db/data.db'
+	conn = create_connection(database) #Open a new 'connection' to the database
+	create_title_basics_table(conn) #If table 'title_basics' doesn't exist, create it
+	with open('data/title.basics.tsv', encoding='utf-8') as tsvfile: #Open up the IMdB data, read above on where to get this
+		reader = csv.reader(tsvfile, delimiter='\t') #Create a 'reader' to read through each row
+		i = 0
+		print('Opened tsv file')
+		for row in reader:
+			i += 1
+			if i is 1:
+				continue #First row describes each column, and isn't data, skip it
 
-ia = imdb.IMDb()
-setup_excel_sheets()
-store_user_input()
-wb.save(EXCEL_SPREADSHEET_NAME)
-db.close()
+			try:
+				data = ( #Assemble the new row to be inserted into a tuple
+					int(row[0][2:]),
+					str(row[1]),
+					str(row[2]),
+					str(row[3]),
+					int(row[4]),
+					None if row[5] == '\\N' else int(row[5]),
+					None if row[6] == '\\N' else int(row[6]),
+					None if row[7] == '\\N' else int(row[7]),
+					str(row[8])
+				)
+				add_title_basic(conn, data) #Ingest new row into database
+				if i % 10000 is 0:
+					print(i, " rows transferred")
+			except Exception as e:
+				print(e)
+				print('Error occured at tconst=' + row[0])
+				
+	conn.commit() #Save changes to database
 
+if __name__ == '__main__':
+	main()

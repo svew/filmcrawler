@@ -13,46 +13,9 @@ PHASE 1:
 			- Writer
 	2.	Fetch an object of a person by ID containing:
 			- Name
+			- 
 		And:
 			- Filmography
 	
 	2. Store an object of a movie in the SQL database
-
-
-TABLES:
-
-    movie_general
-        movie_id            PRIMARY KEY
-        title
-        release_year
-        synopsis
-        poster_url
-        rating_imdb
-        watched
-        want_to_see
-
-    movie_cast
-        movie(movie_id)     PRIMARY KEY
-        person(person_id)
-        role
-
-    movie_writers           PRIMARY KEY
-        movie(movie_id)
-        person(person_id)
-        description
-
-    movie_directors
-        movie(movie_id)     PRIMARY KEY
-        person(person_id)
-        description
-
-    movie_producers
-        movie(movie_id)     PRIMARY KEY
-        person(person_id)
-        description
-
-    person
-        person_id           PRIMARY KEY
-        name
-        birthday
-        portrait_url
+		
